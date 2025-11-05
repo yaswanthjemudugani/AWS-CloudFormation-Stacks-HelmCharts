@@ -1,0 +1,19 @@
+replicaCount: 1
+image:
+  repository: $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$AWS_ECR_REPO_NAME
+  tag: null
+resources:
+  requests:
+    cpu: 500m
+    memory: 768Mi
+  limits:
+    cpu: 500m
+    memory: 768Mi
+service:
+  port: 80
+  targetPort: 3000
+autoscaling:
+  enabled: true # Change to true if you want to enable autoscaling
+  minReplicas: 1
+  maxReplicas: 1
+  targetCPUUtilizationPercentage: 70

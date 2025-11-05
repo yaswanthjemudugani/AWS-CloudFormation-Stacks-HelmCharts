@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-deployment
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: bbcadmin-app
+  template:
+    metadata:
+      labels:
+        app: bbcadmin-app
+    spec:
+      containers:
+        - name: bbcadmin-app-container
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          securityContext:
+            runAsUser:  65536
+            runAsGroup: 65536
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true 
+            capabilities:
+              drop:
+              - ALL
+            seccompProfile:
+              type: RuntimeDefault         
+          ports:
+            - containerPort: 3000
+          resources:
+            requests:
+              cpu: {{ .Values.resources.requests.cpu }}
+              memory: {{ .Values.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.limits.cpu }}
+              memory: {{ .Values.resources.limits.memory }}
+          volumeMounts:
+            - name: ca-tls
+              mountPath: /etc/ssl/certificate-authority/
+            - name: pm2
+              mountPath: /pm2
+      volumes:
+        - name: ca-tls
+          secret:
+            secretName: ca-secret
+        - name: pm2
+          emptyDir: {}

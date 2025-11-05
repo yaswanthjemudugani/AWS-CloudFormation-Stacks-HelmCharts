@@ -1,0 +1,19 @@
+replicaCount: 1
+image:
+  repository: REPLACE_AWS_ACCOUNT_ID.dkr.ecr.REPLACE_AWS_REGION.amazonaws.com/REPLACE_AWS_ECR_REPO_NAME
+  tag: REPLACE_TAG
+resources:
+  requests:
+    cpu: 2000m
+    memory: 3840Mi
+  limits:
+    cpu: 2000m
+    memory: 3840Mi
+service:
+  port: 80
+  targetPort: 3000
+autoscaling:
+  enabled: true # Change to true if you want to enable autoscaling
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70

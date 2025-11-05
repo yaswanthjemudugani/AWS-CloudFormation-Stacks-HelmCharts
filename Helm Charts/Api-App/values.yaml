@@ -1,0 +1,26 @@
+# Default values for your Helm chart
+replicaCount: 1
+
+image:
+  repository: REPLACE_AWS_ACCOUNT_ID.dkr.ecr.REPLACE_AWS_REGION.amazonaws.com/REPLACE_AWS_ECR_REPO_NAME
+  tag: REPLACE_TAG
+
+resources:
+  requests:
+    cpu: 1000m
+    memory: 1792Mi
+  limits:
+    cpu: 1000m
+    memory: 1792Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+secrets:
+  serviceaccountname: "bullchargeapiserviceaccount"
+
+ingress:
+  enabled: false

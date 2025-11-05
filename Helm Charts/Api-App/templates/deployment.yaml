@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-deployment
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: bbcapi-app
+  template:
+    metadata:
+      labels:
+        app: bbcapi-app
+    spec:
+      serviceAccountName: {{ .Values.secrets.serviceaccountname }}
+      containers:
+        - name: bbcapi-app-container
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          securityContext:
+            runAsUser:  65536
+            runAsGroup: 65536
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true 
+            capabilities:
+              drop:
+              - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          ports:
+            - containerPort: 8443
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: {{ .Release.Name }}-configmap
+            - secretRef:
+                name: {{ .Release.Name }}-secrets
+          resources:
+            requests:
+              cpu: "{{ .Values.resources.requests.cpu }}"
+              memory: "{{ .Values.resources.requests.memory }}"
+            limits:
+              cpu: "{{ .Values.resources.limits.cpu }}"
+              memory: "{{ .Values.resources.limits.memory }}"
+          volumeMounts:
+            - name: cert-tls
+              mountPath: /etc/ssl/certs/service
+            - name: ca-tls
+              mountPath: /etc/ssl/certs/certificate-authority/
+            - name: pm2
+              mountPath: /pm2
+      volumes:
+        - name: cert-tls
+          secret:
+            secretName: bbcapi-service-secret
+        - name: ca-tls
+          secret:
+            secretName: ca-secret
+        - name: pm2
+          emptyDir: {}
