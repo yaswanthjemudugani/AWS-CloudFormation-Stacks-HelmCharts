@@ -1,0 +1,422 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template to create a VPC with public and private subnets, an Internet Gateway, a NAT Gateway, EC2 instances, and an RDS cluster in private subnets.'
+
+Parameters:
+  VPCName:
+    Type: String
+    Default: MyVPC
+    Description: Name of the VPC
+
+  VPCIPv4CIDR:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: IPv4 CIDR block for the VPC
+
+  PublicSubnet1CIDR:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: IPv4 CIDR block for the public subnet in Availability Zone 1
+
+  PublicSubnet2CIDR:
+    Type: String
+    Default: 10.0.2.0/24
+    Description: IPv4 CIDR block for the public subnet in Availability Zone 2
+
+  PrivateSubnet1CIDR:
+    Type: String
+    Default: 10.0.3.0/24
+    Description: IPv4 CIDR block for the private subnet in Availability Zone 1
+
+  PrivateSubnet2CIDR:
+    Type: String
+    Default: 10.0.4.0/24
+    Description: IPv4 CIDR block for the private subnet in Availability Zone 2
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    Description: Type of EC2 instance
+    
+  InstanceAMI:
+    Type: String
+    Default: ami-0680ec672a96e74dd
+    Description: AMI for AL-2023 
+
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: The name of an existing EC2 Key Pair to enable SSH access to the instance.
+    
+  PrivateInstancePassword:
+    Description: Password for the ec2-user
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    MaxLength: 30
+    ConstraintDescription: Password must be between 8 and 30 characters
+
+  MasterUsername:
+    Type: String
+    Description: Master username for the RDS cluster
+
+  MasterUserPassword:
+    Type: String
+    Description: Master user password for the RDS cluster
+    
+  AuroraDBPort:
+    Type: String
+    Default: "5432"  # Set a default value if desired
+    Description: Provide port number of Aurora PostgreSQL DB
+    
+  DBInstanceClass:
+    Type: String
+    Default: "db.t3.medium"
+    Description: Select the sizing for RDS instance
+    
+  RDSKmsKeyID:
+    Type: String
+    Default: arn:aws:kms:ap-south-2:767397962942:key/2d669daf-8694-4b59-9780-2fc1e781d739
+    Description: Provide Default KMSKeyID for Encryption of Aurora PostgreSQL DB.
+    
+    
+Resources:
+  VPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !Ref VPCIPv4CIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Ref VPCName
+
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${VPCName}-InternetGateway'
+
+  AttachGateway:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: !Sub '${VPCName}-PublicSubnet1'
+
+  PublicSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet2CIDR
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: !Sub '${VPCName}-PublicSubnet2'
+
+  PrivateSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: !Sub '${VPCName}-PrivateSubnet1'
+
+  PrivateSubnet2:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: !Sub '${VPCName}-PrivateSubnet2'
+
+  ElasticIP:
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${VPCName}-ElasticIP'
+
+  NATGateway:
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      AllocationId: !GetAtt ElasticIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+      Tags:
+        - Key: Name
+          Value: !Sub '${VPCName}-NATGateway'
+
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${VPCName}-PublicRouteTable'
+
+  PrivateRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${VPCName}-PrivateRouteTable'
+
+  PublicRoute:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref InternetGateway
+
+  PrivateRoute:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      NatGatewayId: !Ref NATGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  PublicInstanceSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable SSH access on port 22
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${VPCName}-PublicInstanceSG'
+
+  PrivateInstanceSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Allow access from public EC2 instance only
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId: !Ref PublicInstanceSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${VPCName}-PrivateInstanceSG'         
+          
+  PublicEC2Instance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref PublicSubnet1
+      SecurityGroupIds:
+        - !Ref PublicInstanceSecurityGroup
+      KeyName: !Ref KeyPairName
+      ImageId: !Ref InstanceAMI
+      Tags:
+        - Key: Name
+          Value: !Sub '${VPCName}-Public-EC2Instance'
+          
+  PrivateEC2Instance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroupIds:
+        - !Ref PrivateInstanceSecurityGroup
+      ImageId: !Ref InstanceAMI
+      KeyName: !Ref KeyPairName
+      UserData:
+        Fn::Base64: 
+          !Sub |
+            #!/bin/bash
+            yum update -y
+            yum install -y cloud-init
+            sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+            systemctl restart sshd
+            echo 'ec2-user:${PrivateInstancePassword}' | chpasswd
+      Tags:
+        - Key: Name
+          Value: !Sub '${VPCName}-Private-EC2Instance'
+
+  RDSSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Allow access to RDS from private subnet EC2 instance
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref PrivateInstanceSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub '${VPCName}-RDS-SG'
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: 'Subnet group for RDS instances'
+      SubnetIds: 
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+
+  DBClusterParameterGroup:
+    Type: AWS::RDS::DBClusterParameterGroup
+    Properties:
+      Description: "Cluster parameter group"
+      Family: aurora-postgresql15 # Change the family if needed
+      Parameters:
+        timezone: Asia/Kuala_Lumpur
+        
+  DBParameterGroup:
+    Type: "AWS::RDS::DBParameterGroup"
+    Properties:
+      Description: "Instance parameter group"
+      Family: "aurora-postgresql15"
+      Parameters:
+        log_statement: "all"
+        log_duration: "on"
+
+
+  IAMAuroraRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: IAMAuroraRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Sid: ''
+          Effect: Allow
+          Principal:
+            Service:
+            - rds.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AWSKeyManagementServicePowerUser
+      Path: "/"
+
+
+  IAMEnhancedMonitoringRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: IAMEnhancedMonitoringRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Sid: ''
+          Effect: Allow
+          Principal:
+            Service: monitoring.rds.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole
+      Path: "/"
+
+  
+  AuroraCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      Engine: aurora-postgresql
+      EngineVersion: '15.4'
+      CopyTagsToSnapshot: true
+      DeletionProtection: true
+      DBClusterIdentifier: RDS-AuroraPsql-DB-Cluster
+      DBClusterParameterGroupName: !Ref DBClusterParameterGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      DatabaseName: initialdatabase
+      MasterUsername: !Ref MasterUsername
+      MasterUserPassword: !Ref MasterUserPassword
+      StorageEncrypted: true
+      Port: !Ref AuroraDBPort
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: '00:00-00:30'
+      KmsKeyId: !Ref RDSKmsKeyID
+      EnableIAMDatabaseAuthentication: true
+      EnableCloudwatchLogsExports:
+      - postgresql
+      AssociatedRoles:
+      - RoleArn: !GetAtt IAMAuroraRole.Arn
+        FeatureName: s3Import
+      VpcSecurityGroupIds:
+      - !Ref RDSSecurityGroup
+
+
+  DBInstance1:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: aurora-postgresql
+      EngineVersion: '15.4'
+      DBInstanceIdentifier: RDS-AuroraPsql-DB-Instance1
+      CACertificateIdentifier: rds-ca-rsa2048-g1
+      DBInstanceClass: !Ref DBInstanceClass
+      DBClusterIdentifier: !Ref AuroraCluster
+      AutoMinorVersionUpgrade: true
+      PubliclyAccessible: false
+      StorageType: aurora
+      EnablePerformanceInsights: true
+      PerformanceInsightsRetentionPeriod: 7
+      DBParameterGroupName: !Ref DBParameterGroup
+      MonitoringInterval: 60
+      MonitoringRoleArn: !GetAtt ['IAMEnhancedMonitoringRole', 'Arn']
+
+  DBInstance2:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: aurora-postgresql
+      EngineVersion: '15.4'
+      DBInstanceIdentifier: RDS-AuroraPsql-DB-Instance2
+      CACertificateIdentifier: rds-ca-rsa2048-g1
+      DBInstanceClass: !Ref DBInstanceClass
+      DBClusterIdentifier: !Ref AuroraCluster
+      AutoMinorVersionUpgrade: true
+      PubliclyAccessible: false
+      StorageType: aurora
+      EnablePerformanceInsights: true
+      PerformanceInsightsRetentionPeriod: 7
+      DBParameterGroupName: !Ref DBParameterGroup
+      MonitoringInterval: 60
+      MonitoringRoleArn: !GetAtt ['IAMEnhancedMonitoringRole', 'Arn']
+      

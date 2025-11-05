@@ -1,0 +1,77 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudFormation template to create an EFS with elastic throughput and automatic backups, and attach a Security Group to it.
+
+Parameters:
+  VpcId:
+    Type: "AWS::EC2::VPC::Id"
+    Description: "VPC Id"
+  
+  SubnetId1:
+    Type: "AWS::EC2::Subnet::Id"
+    Description: "Subnet Id for Mount Target 1"
+  
+  SubnetId2:
+    Type: "AWS::EC2::Subnet::Id"
+    Description: "Subnet Id for Mount Target 2"
+
+  SubnetId3:
+    Type: "AWS::EC2::Subnet::Id"
+    Description: "Subnet Id for Mount Target 3"
+
+
+Resources:
+  MyEfsSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: "Allow NFS traffic to EFS"
+      VpcId: !Ref "VpcId"
+      SecurityGroupIngress:
+        - IpProtocol: "tcp"
+          FromPort: "2049"
+          ToPort: "2049"
+          CidrIp: "0.0.0.0/0"  # You might want to restrict this to your specific CIDR block
+
+  MyEfsFileSystem:
+    Type: "AWS::EFS::FileSystem"
+    Properties:
+      Encrypted: true
+      FileSystemTags:
+        - Key: "Name"
+          Value: "MyEFS"
+      PerformanceMode: "generalPurpose"
+      ThroughputMode: "elastic"
+      BackupPolicy:
+        Status: "ENABLED"
+
+  MyEfsMountTarget1:
+    Type: "AWS::EFS::MountTarget"
+    Properties:
+      FileSystemId: !Ref "MyEfsFileSystem"
+      SubnetId: !Ref "SubnetId1"
+      SecurityGroups:
+        - !Ref "MyEfsSecurityGroup"
+
+  MyEfsMountTarget2:
+    Type: "AWS::EFS::MountTarget"
+    Properties:
+      FileSystemId: !Ref "MyEfsFileSystem"
+      SubnetId: !Ref "SubnetId2"
+      SecurityGroups:
+        - !Ref "MyEfsSecurityGroup"
+
+  MyEfsMountTarget3:
+    Type: "AWS::EFS::MountTarget"
+    Properties:
+      FileSystemId: !Ref "MyEfsFileSystem"
+      SubnetId: !Ref "SubnetId3"
+      SecurityGroups:
+        - !Ref "MyEfsSecurityGroup"
+
+
+Outputs:
+  EfsFileSystemId:
+    Description: "EFS File System ID"
+    Value: !Ref "MyEfsFileSystem"
+    Export:
+      Name: "EfsFileSystemId"
+
